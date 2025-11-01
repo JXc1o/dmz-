@@ -30,12 +30,16 @@ def resolve_interactions(manager, environment, config):
 
     # --- 2. 소비자 상호작용 계산 ---
     total_consumed_by_apex = 0
+    handling_time = config.get('interaction_settings', {}).get('predator_handling_time', 0.01)
     for species in manager.species_by_id.values():
         if species.status.startswith('3-1'):
             # [핵심 수정] 가장 단순한 개체 수 비례 포식 모델로 변경
             # 복잡한 밀도 효과를 제거하여 안정성 확보
             eaten_rate = species.params.get('eaten_rate', 0.0)
-            predation_loss = eaten_rate * species.population * apex_predator_pop
+            functional_response = eaten_rate * apex_predator_pop
+            if handling_time > 0:
+                functional_response = (eaten_rate * apex_predator_pop) / (1.0 + handling_time * eaten_rate * apex_predator_pop)
+            predation_loss = functional_response * species.population
             
             base_delta = species.calculate_delta(producer_population=producer_pop)
             results['deltas'][species.id] = base_delta - predation_loss
@@ -46,6 +50,9 @@ def resolve_interactions(manager, environment, config):
     energy_conversion_efficiency = interaction_settings.get('energy_conversion_efficiency', 0.2)
     prey_energy = interaction_settings.get('prey_energy_content', 100.0)
     total_energy_gain = total_consumed_by_apex * energy_conversion_efficiency * prey_energy
+    max_energy_per_predator = interaction_settings.get('max_energy_per_predator', 400.0)
+    if apex_predator_pop > 0 and max_energy_per_predator > 0:
+        total_energy_gain = min(total_energy_gain, apex_predator_pop * max_energy_per_predator)
     
     for species in manager.species_by_id.values():
         if species.status.startswith('3-3'):

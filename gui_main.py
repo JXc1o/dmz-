@@ -19,7 +19,11 @@ import traceback
 from main_simulator import SimulationRunner
 from interaction_engine import resolve_interactions
 import fitness_calculator as fc
-from species_generator import generate_species_from_archetypes, SPECIES_ARCHETYPES
+from species_generator import (
+    generate_species_from_archetypes,
+    generate_scientifically_balanced_ecosystem,
+    SPECIES_ARCHETYPES,
+)
 
 try:
     from optimizer import (initialize_population, tournament_selection,
@@ -88,14 +92,20 @@ class SimulationWorker(QThread):
     progress = pyqtSignal(int, int, dict)
     finished = pyqtSignal(str)
 
-    def __init__(self, config):
+    def __init__(self, config, species_list=None):
         super().__init__()
         self.config = config
+        self.species_list_override = species_list
         self.is_running = True
 
     def run(self):
         try:
-            runner = SimulationRunner(self.config, is_first_run=True, run_number=1)
+            runner = SimulationRunner(
+                self.config,
+                is_first_run=True,
+                run_number=1,
+                species_list_override=self.species_list_override,
+            )
             last_tick, is_extinct = runner.run(gui_callback=self.update_gui_progress)
 
             if not self.is_running:
@@ -310,6 +320,13 @@ class MainWindow(QMainWindow):
         detected_preset = self.detect_ecosystem_preset(ecosystem_setup)
         cfg.setdefault('ecosystem_preset', detected_preset)
         cfg.setdefault('species_fixed_params', {})
+        cfg.setdefault('use_scientific_balancing', True)
+        sim_settings = cfg.setdefault('simulation_settings', {})
+        sim_settings.setdefault('stability_validation_ticks', 100)
+        sim_settings.setdefault('stability_max_attempts', 20)
+        interaction_settings = cfg.setdefault('interaction_settings', {})
+        interaction_settings.setdefault('predator_handling_time', 0.01)
+        interaction_settings.setdefault('max_energy_per_predator', 400.0)
         return cfg
 
     def detect_ecosystem_preset(self, setup_dict):
@@ -638,6 +655,8 @@ class MainWindow(QMainWindow):
         filepath, _ = QFileDialog.getOpenFileName(self, "Load Configuration File", "", "JSON Files (*.json)")
         if filepath:
             self.config = self.load_config(filepath)
+            if self.config:
+                self.config = self.ensure_config_defaults(self.config)
             self.current_config_path = filepath
             self.update_ui_from_config()
             self.statusBar().showMessage(f"Loaded configuration from '{filepath}'", 3000)
@@ -676,6 +695,54 @@ class MainWindow(QMainWindow):
         # [핵심 수정] 영양소 관련 UI 활성화/비활성화 코드 제거
         # self.initial_nutrients_label.setEnabled(enabled)
         # self.initial_nutrients_spinbox.setEnabled(enabled)
+
+    def generate_validated_species_list(self, config):
+        sim_settings = config.get('simulation_settings', {})
+        validation_ticks = sim_settings.get('stability_validation_ticks', 100)
+        max_attempts = sim_settings.get('stability_max_attempts', 20)
+        use_balancing = config.get('use_scientific_balancing', True)
+        os.makedirs('results', exist_ok=True)
+        temp_log_path = os.path.join('results', 'temp_gui_validation.csv')
+
+        for attempt in range(1, max_attempts + 1):
+            if use_balancing:
+                species_list = generate_scientifically_balanced_ecosystem(
+                    config.get('ecosystem_setup', {}),
+                    config
+                )
+            else:
+                species_list = generate_species_from_archetypes(
+                    config.get('ecosystem_setup', {}),
+                    config.get('genetic_engine_params'),
+                    config.get('species_fixed_params')
+                )
+
+            if validation_ticks <= 0:
+                return species_list
+
+            validation_config = copy.deepcopy(config)
+            validation_config['simulation_settings'] = copy.deepcopy(config.get('simulation_settings', {}))
+            validation_config['simulation_settings']['results_filename'] = temp_log_path
+
+            validator = SimulationRunner(
+                config=validation_config,
+                species_list_override=copy.deepcopy(species_list),
+                is_first_run=False
+            )
+            last_tick, is_extinct = validator.run(verbose=False, ticks_override=validation_ticks)
+
+            apex_alive = any(len(engine.population) > 0 for engine in validator.genetic_engines.values())
+
+            if os.path.exists(temp_log_path):
+                try:
+                    os.remove(temp_log_path)
+                except OSError:
+                    pass
+
+            if (not is_extinct or last_tick >= validation_ticks) and apex_alive:
+                return species_list
+
+        raise RuntimeError("Unable to generate a stable ecosystem after multiple attempts.")
 
     def on_ecosystem_changed(self, preset_name):
         if self._suppress_ecosystem_events:
@@ -749,23 +816,32 @@ class MainWindow(QMainWindow):
         self.sim_stop_btn.setEnabled(True)
         self.reset_simulation()
         if self.optimized_config:
-            current_config = self.optimized_config
+            source_config = self.optimized_config
             self.statusBar().showMessage("Starting simulation with optimized parameters.", 5000)
             self.optimized_config = None
         else:
             self.update_config_from_ui()
-            current_config = self.config
+            source_config = self.config
             self.statusBar().showMessage("Starting simulation with current settings.", 3000)
         
+        current_config = copy.deepcopy(source_config)
         if self.climate_csv_path:
             current_config['climate_scenario']['filepath'] = self.climate_csv_path
         elif 'filepath' in current_config['climate_scenario']:
              del current_config['climate_scenario']['filepath']
 
+        try:
+            species_list = self.generate_validated_species_list(current_config)
+        except RuntimeError as e:
+            self.sim_start_btn.setEnabled(True)
+            self.sim_stop_btn.setEnabled(False)
+            QMessageBox.warning(self, "Initialization Failed", str(e))
+            return
+
         results_dir = "results"
         os.makedirs(results_dir, exist_ok=True)
         current_config['simulation_settings']['results_filename'] = os.path.join(results_dir, "gui_sim_log.csv")
-        self.sim_worker = SimulationWorker(current_config)
+        self.sim_worker = SimulationWorker(current_config, species_list=species_list)
         self.sim_worker.progress.connect(self.update_sim_progress)
         self.sim_worker.finished.connect(self.finish_simulation)
         self.sim_worker.start()

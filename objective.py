@@ -98,7 +98,29 @@ def evaluate_fitness(args, base_config, target_df, results_folder):
 
     sim_log_filename = os.path.join(results_folder, f"run_{run_id}_log.csv")
     current_config['simulation_settings']['results_filename'] = sim_log_filename
-    
+
+    validation_ticks = current_config['simulation_settings'].get('stability_validation_ticks', 0)
+    if validation_ticks and validation_ticks > 0:
+        temp_validation_path = os.path.join(results_folder, f"run_{run_id}_validation.csv")
+        validation_config = copy.deepcopy(current_config)
+        validation_config['simulation_settings'] = copy.deepcopy(current_config['simulation_settings'])
+        validation_config['simulation_settings']['results_filename'] = temp_validation_path
+        validator = SimulationRunner(
+            config=validation_config,
+            run_number=run_id,
+            is_first_run=False,
+            species_list_override=copy.deepcopy(species_list)
+        )
+        last_tick, is_extinct = validator.run(verbose=False, ticks_override=validation_ticks)
+        apex_alive = any(len(engine.population) > 0 for engine in validator.genetic_engines.values())
+        if os.path.exists(temp_validation_path):
+            try:
+                os.remove(temp_validation_path)
+            except OSError:
+                pass
+        if (is_extinct and last_tick < validation_ticks) or not apex_alive:
+            return 0.0
+
     try:
         runner = SimulationRunner(
             config=current_config,

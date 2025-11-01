@@ -100,7 +100,7 @@ def generate_scientifically_balanced_ecosystem(ecosystem_setup, config):
     apex_predators = [s for s in species_list if s['type'] == 'GeneticEngine']
     if apex_predators:
         consumer_pop_for_apex = sum(c['initial_population'] for c in consumers)
-        ratio = random.uniform(0.04, 0.08)
+        ratio = random.uniform(0.035, 0.06)
         total_apex_pop = max(len(apex_predators), int(consumer_pop_for_apex * ratio))
         _distribute_population(apex_predators, total_apex_pop)
         print(f"Total Consumer Pop: {consumer_pop_for_apex} -> Total Apex Predator Pop set to: {total_apex_pop}")
