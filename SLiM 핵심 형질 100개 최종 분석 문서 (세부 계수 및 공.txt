@@ -1,0 +1,127 @@
+SLiM 핵심 형질 100개 최종 분석 문서 (세부 계수 및 공식 포함)
+** methodological 접근법**
+이 분석은 Lotka-Volterra 경쟁 모델, Holling의 기능 반응 모델, 생명사 불변량(Life-History Invariants) 등 검증된 생태학적, 진화적 모델을 기반으로 각 형질의 효과를 정량화합니다. 제시된 계수(α, β, k 등)는 시뮬레이션의 구체적인 목표와 스케일에 맞게 조정(calibration)이 필요한 파라미터입니다.
+카테고리 1: 생명사 & 산자수 (Life History & Fecundity, GID 1-20)
+이론적 기반: 생명사 이론 (Life History Theory)
+주요 참고 문헌:
+Stearns, S. C. (1992). The Evolution of Life Histories. Oxford University Press. (생명사 이론의 교과서)
+Charnov, E. L. (1993). Life History Invariants: Some Explorations of Symmetry in Evolutionary Ecology. Oxford University Press. (체중과 생명사 변수 간의 스케일링 법칙)
+핵심 형질 분석:
+GID 1: 기대 수명 (Longevity)
+세부 계수 및 공식: Gompertz-Makeham 사망률 모델 적용. 사망률(age) = a * e^(b * age) + c. 여기서 c는 나이와 무관한 배경 사망률, a와 b는 노화 관련 사망률을 결정합니다. **기대 수명(value)**은 b 값과 역의 관계를 갖도록 설정합니다. b = k / value (k는 스케일링 상수).
+GID 2: 성적 성숙까지의 시간 (Age of Maturity)
+세부 계수 및 공식: reproduction() 콜백 활성화 조건: individual.age >= value.
+상호작용: Charnov (1993)의 불변량 이론에 따라, **성숙 시간(2)**은 **성체 체질량(81)**과 강한 양의 상관관계를 가집니다. value ≈ α * (GID_81_값)^0.25.
+GID 5: 한 배의 평균 자손 수 (Fecundity)
+세부 계수 및 공식: 자손 수 = rpois(1, value * (현재 에너지 / 최대 에너지)). 개체의 현재 에너지 상태에 비례하여 산자수가 결정되도록 합니다.
+상호작용: [상충] **자손 수(5)**와 **초기 자손 생존율(10)**은 value_5 * value_10 = k (k는 종 특이적 상수)와 같은 역의 관계를 갖도록 설정하여 자원 배분 상충을 모델링합니다.
+GID 11: 부모의 양육 투자 수준 (Parental Care Investment)
+세부 계수 및 공식: 자손 생존율 보너스 = 1 + (α * value). 동시에 부모 생존율 패널티 = β * value. 여기서 α는 투자의 효율, β는 투자의 비용을 나타냅니다.
+나머지 형질 (3, 4, 6-10, 12-20): 이전 분석의 구현 방식을 따르되, 각 공식에 시뮬레이션 시간 스케일과 에너지 단위를 맞추기 위한 상수 계수(k)를 곱하여 사용합니다.
+카테고리 2: 생존력 & 방어 (Viability & Defense, GID 21-45)
+이론적 기반: 포식-피식 동역학 및 생태 면역학
+주요 참고 문헌:
+Lima, S. L., & Dill, L. M. (1990). Behavioral decisions made under the risk of predation: a review and prospectus. Canadian Journal of Zoology, 68(4), 619–640. (포식 위험 하에서의 행동 결정)
+Lochmiller, R. L., & Deerenberg, C. (2000). Trade-offs in evolutionary immunology: just what is the cost of immunity? Oikos, 88(1), 87–98. (면역 비용에 대한 심층 리뷰)
+핵심 형질 분석:
+GID 21: 물리적 방어력 (Physical Defense)
+세부 계수 및 공식: 사망 확률 = 포식 공격 강도 * max(0, 1 - value). 여기서 value가 1이면 완벽한 방어를 의미합니다.
+상호작용: [상충] 이동 에너지 소모 = 기본 소모 * (1 + α * value). α는 방어 구조의 무게/비용 계수입니다.
+GID 22: 위장 효과 (Camouflage Efficiency)
+세부 계수 및 공식: 포식자의 탐지 확률 = 기본 탐지율 * (1 - value) * (1 / 포식자의 GID_89_값). 피식자의 위장 효과와 포식자의 시각 능력이 상호작용합니다.
+GID 27: 일반 병원체 저항성 (General Disease Resistance)
+세부 계수 및 공식: 감염 확률 = 질병 압력 * (1 - value).
+상호작용: Lochmiller & Deerenberg (2000)에 따라, 면역 활성화는 에너지 비용을 수반합니다. 감염 시 에너지 소모 = 기본 대사율 * (1 + GID_41_값).
+GID 32: 고온 스트레스 저항성 (Heat Resistance)
+세부 계수 및 공식: 환경 온도가 최적 온도를 초과할 때 적용. 피트니스 감소 = k * (현재 온도 - 최적 온도)^2 * (1 - value). k는 스트레스 민감도 계수입니다. 최적 온도는 다른 형질(예: GID 7)로 정의될 수 있습니다.
+GID 38: 기아 저항성 (Starvation Resistance)
+세부 계수 및 공식: 에너지 소모율 = 기초대사율(8) * (1 - value). 기아 상태(에너지가 특정 임계치 이하)일 때 대사율을 낮추는 능력으로 구현합니다.
+나머지 형질 (23-26, 28-31, 33-37, 39-45): 이전 분석의 공식을 기반으로, 효과의 크기를 조절하는 계수(α, β)를 추가합니다. 예를 들어, **GID 23 (회피 행동)**의 효과는 회피 성공률 = α * value 와 같이 설정합니다.
+카테고리 3: 자원 경쟁 & 섭식 (GID 46-65)
+이론적 기반: 최적 섭식 이론 (Optimal Foraging Theory) 및 Lotka-Volterra 경쟁 모델
+주요 참고 문헌:
+Stephens, D. W., & Krebs, J. R. (1986). Foraging Theory. Princeton University Press. (섭식 이론의 교과서)
+Tilman, D. (1982). Resource Competition and Community Structure. Princeton University Press. (자원 경쟁 이론)
+핵심 형질 분석:
+GID 46: 먹이 탐색 효율 (Foraging Efficiency)
+세부 계수 및 공식: Holling's Type II 기능 반응 모델 적용. 획득 에너지 = (α * value * 자원밀도) / (1 + α * value * GID_48_값 * 자원밀도). α는 탐색률 상수, GID_48은 처리 시간을 의미합니다.
+GID 49: 먹이 폭 (Diet Breadth)
+구현: 시뮬레이션에 N종류의 자원이 있을 때, value는 이 중 몇 종류를 섭식할 수 있는지를 결정합니다. 이용 가능 자원 수 = round(1 + value * (N-1)).
+상호작용: [상충] value가 높을수록(generalist), 각 자원에 대한 섭식 효율(α)은 감소합니다. α = 기본 α / (1 + β * value).
+GID 51: 경쟁 우위 (Competitive Ability)
+세부 계수 및 공식: Lotka-Volterra 경쟁 모델의 계수로 사용. 개체 i가 개체 j에 미치는 경쟁 효과는 α_ij로 표현됩니다. α_ij = GID_51_i / GID_51_j.
+상호작용: **체질량(81)**과 강한 양의 상관관계. value = k * (GID_81_값)^γ.
+GID 54: 밀도 의존 민감도
+구현: 로지스틱 성장 모델의 K(환경 수용력)에 대한 개체의 반응을 조절합니다. 피트니스 배율 = 1 - (현재 개체 수 / (K * (1 / value))). value가 높을수록 밀도 증가에 둔감해집니다.
+나머지 형질 (47, 48, 50, 52, 53, 55-65): 각 형질은 위 공식들의 특정 계수(α, β, k)를 직접 조절하는 역할을 합니다. 예를 들어, **GID 53 (공격성)**은 α_ij 계산 시 가중치를 부여합니다.
+카테고리 4: 짝짓기 & 성선택 (GID 66-80)
+이론적 기반: 성선택 이론 (Sexual Selection Theory)
+주요 참고 문헌:
+Andersson, M. (1994). Sexual Selection. Princeton University Press.
+Lande, R. (1981). Models of speciation by sexual selection on polygenic traits. Proceedings of the National Academy of Sciences, 78(6), 3721–3725. (Fisherian runaway 모델)
+핵심 형질 분석:
+GID 66: 성적 매력도 (Attractiveness)
+세부 계수 및 공식: mateChoice() 콜백에서 짝짓기 가중치 = exp(α * value). α는 선택의 강도를 조절하는 계수입니다.
+GID 68: 성적 장식
+구현: 이 형질은 직접적인 효과보다 다른 형질에 영향을 줍니다. GID_66_값 = β * value.
+상호작용: [상충] 생존율 패널티 (GID_76) = γ * value^2. 장식이 클수록 비용은 기하급수적으로 증가합니다 (Zahavi's Handicap Principle).
+GID 71: 배우자 선택 까다로움 (Mate Choice Selectivity)
+구현: mateChoice()에서, 상대방의 **매력도(66)**가 자신의 value 값보다 낮으면 짝짓기를 거부합니다. if (상대_GID_66 < 내_value) return 0.0;.
+상호작용: [상충] 너무 까다로우면(value가 높음) 짝을 찾지 못해 번식에 실패할 위험이 증가합니다.
+GID 69 (짝짓기 경쟁 우위), 73 (정자 경쟁력): GID 51과 유사하게, 동성 경쟁자 간의 상대적 값 비교를 통해 승자를 결정합니다.
+카테고리 5: 형태 & 성능 (GID 81-100)
+이론적 기반: 이형성장 (Allometry) 및 생물역학 (Biomechanics)
+주요 참고 문헌:
+Schmidt-Nielsen, K. (1984). Scaling: Why is Animal Size So Important?.
+Halsey, L. G., & White, C. R. (2017). Comparative energetics of animal locomotion. Journal of Experimental Biology, 220(17), 3047-3057. (이동 에너지학)
+핵심 형질 분석:
+GID 81: 성체 체질량 (Body Size)
+구현: 시뮬레이션의 거의 모든 파라미터에 영향을 주는 '마스터 형질'입니다. 다른 형질 값을 value에 대한 스케일링 법칙(power law)으로 결정합니다. 예: 기초대사율(8) = 70 * value^0.75, 기대수명(1) = 4.88 * value^0.25. (참고: Schmidt-Nielsen, 1984)
+GID 84: 최대 이동 속도 (Maximum Speed)
+구현: value가 직접 속도를 결정합니다.
+상호작용: [상충] Halsey & White (2017)에 따르면, 이동 에너지 소모 = a * GID_81_값^0.67 + b * value^2. 즉, 체중과 속도에 따라 에너지 소모가 결정됩니다.
+GID 85 (지구력), 86 (근력), 87 (민첩성):
+구현: 이들은 특정 행동의 성공 확률을 결정하는 계수로 사용됩니다. 예를 들어, 경쟁 승리 확률 = 0.5 + α*(내 근력 - 상대 근력).
+상호작용: [상충] 근섬유 유형에 따라 **속도(84)**와 **지구력(85)**은 강한 음의 상관관계를 갖도록 설정합니다.
+GID 92 (분산 능력), 93 (분산 시 사망률):
+구현: reproduction() 후, 자손이 runif(1) < value_92 확률로 분산합니다. 분산하는 동안 사망률 = value_93이 적용됩니다.
+상호작용: [상충] 높은 **분산 능력(92)**은 근친 교배를 피하고 새로운 서식지를 찾게 하지만, 높은 **분산 시 사망률(93)**이라는 직접적인 비용을 수반합니다.
+
+네, 물론입니다. 해당 시뮬레이터는 특정 단일 논문을 그대로 구현한 것이라기보다는, 생태학 및 진화생물학의 여러 핵심 이론과 모델을 종합하여 만들어진 시스템입니다.
+아래에 이 시뮬레이터의 각 구성 요소가 어떤 학술적 배경에 근거하고 있는지, 주요 이론과 핵심 참고 문헌을 중심으로 정리해 드리겠습니다. 이는 코드의 SLiM 핵심 형질 100개 최종 분석 문서.txt 파일에 언급된 내용과도 일맥상통합니다.
+SERM 시뮬레이터의 이론적 기반 및 참고 문헌
+1. 개체군 동역학 (Population Dynamics) - 거시적 상호작용
+시뮬레이터의 interaction_engine.py에서 생산자, 소비자, 분해자의 개체수 변화를 계산하는 부분은 고전 생태학 모델에 깊이 뿌리를 두고 있습니다.
+핵심 이론: Lotka-Volterra 방정식 (Lotka-Volterra Equations)
+설명: 포식자와 피식자 두 종의 개체수가 시간에 따라 어떻게 변하는지를 설명하는 한 쌍의 미분 방정식입니다. 코드에 있는 rate * population1 * population2 형태의 상호작용 항이 이 모델의 핵심입니다. 이 시뮬레이터는 이 기본 모델을 다수의 종과 환경 요인(온도, 영양소)을 포함하도록 확장했습니다.
+주요 문헌:
+Lotka, A. J. (1925). Elements of Physical Biology.
+Volterra, V. (1926). "Variazioni e fluttuazioni del numero d'individui in specie animali conviventi." Mem. R. Accad. Naz. dei Lincei.
+핵심 이론: 기능 반응 (Functional Response)
+설명: 포식자 한 마리가 먹이의 밀도에 따라 먹이를 소비하는 비율을 나타내는 모델입니다. 앞서 생산자가 즉시 멸종했던 문제는 현재 코드가 비현실적인 'Type I 기능 반응'(먹이 밀도에 따라 포식량이 무한정 증가)을 가정했기 때문입니다. 더 현실적인 모델은 **'Type II 기능 반응'**으로, 포식자의 처리 시간(handling time) 때문에 먹이 밀도가 높아져도 포식량은 특정 수준에서 포화상태가 됩니다.
+주요 문헌:
+Holling, C. S. (1959). "Some characteristics of simple types of predation and parasitism". The Canadian Entomologist. (기능 반응 모델을 최초로 제시한 매우 중요한 논문입니다.)
+2. 진화 동역학 (Evolutionary Dynamics) - 미시적 에이전트 모델
+GeneticEngine과 Individual 클래스를 통해 최상위 포식자의 진화를 모델링하는 부분은 개체 기반 모델링과 진화 이론에 기반합니다.
+핵심 방법론: 개체 기반 모델링 (Agent-Based Modeling, ABM / Individual-Based Modeling, IBM)
+설명: 시스템 전체를 평균으로 보는 대신, 고유한 특성(genome)과 규칙을 가진 개별 개체(Agent)들의 상호작용을 시뮬레이션하여 상위 수준의 패턴(개체군 변화, 진화)이 어떻게 나타나는지 연구하는 접근법입니다. GeneticEngine이 바로 이 역할을 수행합니다.
+주요 문헌:
+Grimm, V., & Railsback, S. F. (2005). Individual-based Modeling and Ecology. (이 분야의 표준 교과서와 같은 책입니다.)
+핵심 이론: 생명사 이론 (Life History Theory)
+설명: 개체가 평생 동안 성장, 생존, 번식에 자원을 어떻게 배분하는지를 다루는 이론입니다. 예를 들어, 많은 수의 작은 자손을 낳을 것인가(r-전략), 적은 수의 큰 자손을 낳고 오래 돌볼 것인가(K-전략) 등의 트레이드오프(trade-off)를 설명합니다. slim_core_traits.py의 GID 1-20번 형질(수명, 성숙 연령, 산자수 등)이 이 이론에 직접적으로 기반합니다.
+주요 문헌:
+Stearns, S. C. (1992). The Evolution of Life Histories. (생명사 이론의 고전 필독서입니다.)
+3. 생물에너지학 및 이형성장 (Bioenergetics and Allometry)
+개체의 특성, 특히 체질량(Body Size)이 다른 생리적, 생태적 특성과 어떻게 연관되는지에 대한 규칙입니다.
+핵심 이론: 대사 이론 및 이형성장 스케일링 (Metabolic Theory & Allometric Scaling)
+설명: 동물의 대사율, 수명, 개체군 성장률 등 수많은 생물학적 특성이 체질량(Mass)에 대해 Y = a * Mass^b 형태의 멱법칙(power law)을 따른다는 이론입니다. 예를 들어, **클라이버의 법칙(Kleiber's Law)**은 기초대사율이 체질량의 3/4 제곱에 비례한다고 설명합니다. SLiM 핵심 형질 문서에서 GID 81(체질량)을 '마스터 형질'로 언급한 것이 바로 이 때문입니다.
+주요 문헌:
+Schmidt-Nielsen, K. (1984). Scaling: Why Is Animal Size So Important?. (이형성장 개념을 매우 쉽게 설명한 명저입니다.)
+Brown, J. H., et al. (2004). "Toward a metabolic theory of ecology". Ecology. (대사 이론을 생태계 전체로 확장한 현대의 핵심 논문입니다.)
+4. 행동 생태학 (Behavioral Ecology)
+fitness_calculator에서 개체의 생존과 번식을 결정하는 부분은 동물이 환경 속에서 어떻게 최적의 행동을 하는지에 대한 이론을 반영합니다.
+핵심 이론: 최적 섭식 이론 (Optimal Foraging Theory)
+설명: 동물이 최소의 비용으로 최대의 에너지 획득을 하도록 먹이활동을 할 것이라고 예측하는 이론입니다. 이는 GID 46(먹이 탐색 효율), GID 48(먹이 처리 효율), GID 49(먹이 폭) 등의 형질이 피트니스에 어떻게 영향을 미치는지를 설계하는 데 이론적 기반을 제공합니다.
+주요 문헌:
+Stephens, D. W., & Krebs, J. R. (1986). Foraging Theory. (이 분야의 바이블과 같은 책입니다.)
+이처럼 SERM 시뮬레이터는 이러한 다양한 이론들을 코드라는 언어로 종합하여, 복잡한 생태계와 진화 과정을 탐구할 수 있도록 만든 정교한 디지털 실험실이라고 할 수 있습니다.

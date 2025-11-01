@@ -1,0 +1,40 @@
+{
+    "simulation_settings": {
+        "total_ticks": 500,
+        "log_interval": 1,
+        "results_filename": "simulation_log.csv",
+        "visualization_output": "simulation_results.png"
+    },
+    "ecosystem_setup": {
+        "photosynthetic_autotroph": 3,
+        "primary_consumer_herbivore": 2,
+        "tertiary_consumer_apex": 1
+    },
+    "climate_scenario": {
+        "scenario_name": "RCP_8.5_Extreme",
+        "initial_temp": 15.0
+    },
+    "genetic_engine_params": {
+        "initial_population": 100,
+        "mutation_rate": 0.1,
+        "mutation_strength": 0.05,
+        "optimal_temperature": 15.0,
+        "base_metabolism_cost": 0.5,
+        "reproduction_energy_ratio": 0.4,
+        "reproduction_min_energy": 50.0
+    },
+    "interaction_settings": {
+        "energy_conversion_efficiency": 0.2,
+        "prey_energy_content": 500.0
+    },
+    "optimizer_settings": {
+        "population_size": 100,
+        "base_mutation_rate": 0.2,
+        "crossover_rate": 0.9,
+        "eta_c": 20,
+        "eta_m": 20,
+        "stagnation_limit": 10,
+        "fitness_target": 0.95,
+        "adaptive_mutation_increase_factor": 1.5
+    }
+}
