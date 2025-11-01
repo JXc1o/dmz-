@@ -147,10 +147,13 @@ class OptimizerWorker(QThread):
             param_ranges = generate_dynamic_param_ranges(self.base_config)
             self.progress.emit(f"Optimizing {len(param_ranges)} parameters.\nTarget Fitness: {self.FITNESS_TARGET:.2f}, Stagnation Limit: {self.STAGNATION_LIMIT} generations.")
             population = initialize_population(param_ranges)
+            population_keys = [self._individual_to_key(ind) for ind in population]
             num_cores = max(1, cpu_count() - 1)
             self.progress.emit(f"Starting parallel evaluation using {num_cores} cores.")
+            eval_func = partial(evaluate_fitness, base_config=self.base_config, target_df=target_df, results_folder=optimizer_results_folder)
             best_fitness_overall = -1
             best_individual_overall = None
+            best_key_overall = None
             stagnation_counter = 0
             gen = 0
             with Pool(processes=num_cores) as pool:
@@ -167,12 +170,10 @@ class OptimizerWorker(QThread):
                         self.progress.emit(f"Fitness stagnated! Increasing mutation rate by {self.ADAPTIVE_MUTATION_INCREASE}x.")
                         current_mutation_rate *= self.ADAPTIVE_MUTATION_INCREASE
                         stagnation_counter = 0
-                    eval_func = partial(evaluate_fitness, base_config=self.base_config, target_df=target_df, results_folder=optimizer_results_folder)
                     fitness_scores = [None] * len(population)
                     evaluations = []
                     evaluation_keys = []
-                    for idx, individual in enumerate(population):
-                        key = self._individual_to_key(individual)
+                    for idx, (individual, key) in enumerate(zip(population, population_keys)):
                         if key in self.fitness_cache:
                             fitness_scores[idx] = self.fitness_cache[key]
                         else:
@@ -180,7 +181,8 @@ class OptimizerWorker(QThread):
                             evaluation_keys.append((idx, key))
                             self.eval_counter += 1
                     if evaluations:
-                        results = pool.map(eval_func, evaluations)
+                        chunk = max(1, len(evaluations) // (num_cores * 4) or 1)
+                        results = pool.map(eval_func, evaluations, chunksize=chunk)
                         for (idx, key), score in zip(evaluation_keys, results):
                             fitness_scores[idx] = score
                             self.fitness_cache[key] = score
@@ -189,7 +191,9 @@ class OptimizerWorker(QThread):
                     max_fitness_gen = max(fitness_scores)
                     if max_fitness_gen > best_fitness_overall:
                         best_fitness_overall = max_fitness_gen
-                        best_individual_overall = population[fitness_scores.index(max_fitness_gen)]
+                        best_idx = fitness_scores.index(max_fitness_gen)
+                        best_individual_overall = population[best_idx]
+                        best_key_overall = population_keys[best_idx]
                         stagnation_counter = 0
                     else:
                         stagnation_counter += 1
@@ -200,14 +204,20 @@ class OptimizerWorker(QThread):
                         self.update_progress_bar.emit(self.MAX_GENERATIONS, self.MAX_GENERATIONS)
                         break
                     new_population = [best_individual_overall]
+                    new_population_keys = [best_key_overall]
                     while len(new_population) < self.population_size:
                         p1 = tournament_selection(population, fitness_scores)
                         p2 = tournament_selection(population, fitness_scores)
                         c1, c2 = simulated_binary_crossover(p1, p2, param_ranges)
-                        new_population.append(polynomial_mutation(c1, param_ranges, mutation_rate=current_mutation_rate))
+                        child1 = polynomial_mutation(c1, param_ranges, mutation_rate=current_mutation_rate)
+                        new_population.append(child1)
+                        new_population_keys.append(self._individual_to_key(child1))
                         if len(new_population) < self.population_size:
-                            new_population.append(polynomial_mutation(c2, param_ranges, mutation_rate=current_mutation_rate))
+                            child2 = polynomial_mutation(c2, param_ranges, mutation_rate=current_mutation_rate)
+                            new_population.append(child2)
+                            new_population_keys.append(self._individual_to_key(child2))
                     population = new_population
+                    population_keys = new_population_keys
             if self.is_running and best_individual_overall:
                 self.finished.emit(best_individual_overall, "Optimization complete.")
             else:
